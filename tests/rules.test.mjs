@@ -131,16 +131,26 @@ test('voting original out keeps converted alive and removes conversion authority
   assert.equal(s.winner,null);
   assert.equal(act(s,'START_CORRUPT',{actorId:'p1',targetId:'p3'}),s);
 });
-test('attack respects protection, range, cooldown, interrupts task and ends game',()=>{
+test('good players cannot attack or convert; converted players cannot convert',()=>{
+  const s=ready();
+  assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p1'}),s);
+  assert.equal(act(s,'START_CORRUPT',{actorId:'p2',targetId:'p3'}),s);
+  s.players[1].role='converted';
+  assert.equal(act(s,'START_CORRUPT',{actorId:'p2',targetId:'p3'}),s);
+  assert.notEqual(act(s,'ATTACK',{actorId:'p2',targetId:'p3'}),s);
+});
+
+test('attack respects protection and cooldown',()=>{
   let s=createGame();
+  s.players[1].role='converted';
   assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p1'}),s);
   s=act(s,'TICK',{now:15000});
   for(let i=0;i<4;i++){
     s=act(s,'ATTACK',{actorId:'p2',targetId:'p1'});
     if(i<3){assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p1'}),s);s=act(s,'TICK',{now:s.now+800});}
   }
-  assert.equal(s.winner,'good');
-  assert.equal(act(s,'MOVE',{actorId:'p2',room:'power'}),s);
+  assert.equal(s.players[0].alive,false);
+  assert.equal(s.winner,null);
 });
 test('third good converted triggers immediate traitor victory',()=>{
   let s=ready();for(let i=4;i<8;i++)s.players[i].alive=false;
@@ -160,7 +170,7 @@ test('meeting interruption applies retry cooldown and pauses it through meeting'
   s=act(s,'TICK',{now:108000});
   assert.notEqual(act(s,'START_CORRUPT',{actorId:'p1',targetId:'p3'}),s);
 });
-test('full game: tasks fund meeting, original ejected, converted killed, good wins',()=>{
+test('full game: tasks fund meetings, both traitors ejected, good wins',()=>{
   let s=ready();
   s=act(s,'START_CORRUPT',{actorId:'p1',targetId:'p2'});
   s=act(s,'TICK',{now:20000});
@@ -178,10 +188,17 @@ test('full game: tasks fund meeting, original ejected, converted killed, good wi
   s=act(s,'TICK',{now:s.meeting.endsAt});
   assert.equal(s.energy,0);assert.equal(s.winner,null);assert.equal(s.players[0].alive,false);
   s=act(s,'TICK',{now:s.now+5000});
-  for(let i=0;i<4;i++){
-    s=act(s,'ATTACK',{actorId:'p3',targetId:'p2'});
-    if(i<3)s=act(s,'TICK',{now:s.now+800});
+  s=act(s,'MOVE',{actorId:'p3',room:'power'});
+  for(let i=0;i<7;i++){
+    s=act(s,'TICK',{now:Math.max(s.now+1,s.taskReadyAt['power-calibration']||0)});
+    s=act(s,'START_TASK',{actorId:'p3',taskId:'power-calibration'});
+    s=act(s,'TICK',{now:s.now+12000});
   }
+  s=act(s,'MOVE',{actorId:'p3',room:'hub'});
+  s=act(s,'START_MEETING',{actorId:'p3'});
+  s=act(s,'TICK',{now:s.now+63000});
+  for(let i=3;i<=7;i++)s=act(s,'VOTE',{actorId:`p${i}`,targetId:'p2'});
+  s=act(s,'TICK',{now:s.meeting.endsAt});
   assert.equal(s.winner,'good');assert.equal(s.phase,'ended');
 });
 test('damage cancels task and conversion; different rooms cannot be attacked',()=>{
@@ -193,7 +210,9 @@ test('damage cancels task and conversion; different rooms cannot be attacked',()
   s=act(s,'ATTACK',{actorId:'p1',targetId:'p2'});
   assert.equal(s.channels.p2,undefined);
   s=act(s,'START_CORRUPT',{actorId:'p1',targetId:'p2'});
-  s=act(s,'ATTACK',{actorId:'p2',targetId:'p1'});
+  s.players[2].role='converted';
+  s=act(s,'MOVE',{actorId:'p3',room:'power'});
+  s=act(s,'ATTACK',{actorId:'p3',targetId:'p1'});
   assert.equal(s.corruption.channel,null);assert.equal(s.corruption.used,0);
 });
 test('walking within a room cancels active channel without spending charge',()=>{

@@ -1,4 +1,4 @@
-export function createOnline({onState,onStatus,onLocal}){
+export function createOnline({onState,onStatus,onLocal,onCombat=()=>{}}){
  const dialog=document.querySelector('#network-dialog'),status=document.querySelector('#network-status');let ws=null,session=null,connecting=false,manual=false,retry=null,lastInput=0,config=null,ready=false;
  const el=id=>document.getElementById(id),say=text=>{status.textContent=text;onStatus(text);};
  const send=msg=>{if(ws?.readyState===1)ws.send(JSON.stringify(msg));};
@@ -6,8 +6,9 @@ export function createOnline({onState,onStatus,onLocal}){
   el('room-entry').hidden=true;el('room-lobby').hidden=false;el('room-code-display').textContent=data.code;
   const list=el('room-members');list.replaceChildren();
   for(const p of data.players){const li=document.createElement('li');li.textContent=`${p.name}${p.id===data.hostId?' · 房主':''} — ${p.connected?(p.ready?'已准备':'未准备'):'断线，等待重连'}`;list.append(li);}
-  ready=!!data.players.find(p=>p.id===session?.actorId)?.ready;el('room-ready').textContent=ready?'取消准备':'准备';el('room-start').hidden=data.hostId!==session?.actorId;el('room-start').disabled=data.players.length!==8||data.players.some(p=>!p.ready||!p.connected);
-  say(data.started?'已连接 · 对局进行中':`${data.players.length} / 8 人 · 等待全部准备`);
+  ready=!!data.players.find(p=>p.id===session?.actorId)?.ready;el('room-ready').textContent=ready?'取消准备':'准备';el('room-start').hidden=data.hostId!==session?.actorId;el('room-start').disabled=data.players.length<4||data.players.some(p=>!p.ready||!p.connected);
+  el('room-start').textContent=`开始游戏 · ${data.players.length} 人`;
+  say(data.started?'已连接 · 对局进行中':`${data.players.length} / 8 人 · ${data.players.length<4?'至少 4 人才能开始':'等待全部准备'}`);
  }
  async function connect(action){
   if(connecting)return;connecting=true;manual=false;say('正在连接房间服务器…');
@@ -22,6 +23,7 @@ export function createOnline({onState,onStatus,onLocal}){
    ws.onmessage=e=>{const data=JSON.parse(e.data);
     if(data.type==='joined'){session={code:data.code,token:data.token,actorId:data.actorId};sessionStorage.setItem('shadow-room',JSON.stringify(session));el('room-leave').hidden=false;el('local-mode').hidden=true;}
     if(data.type==='lobby')lobby(data);
+    if(data.type==='combat')onCombat(data);
     if(data.type==='state'){onState(data);if(dialog.open)dialog.close();say(`房间 ${session.code} · 已连接`);}
     if(data.type==='error'){say(data.message);if(action.type==='resume'){session=null;sessionStorage.removeItem('shadow-room');manual=true;ws.close();el('room-entry').hidden=false;el('room-lobby').hidden=true;el('local-mode').hidden=false;el('room-leave').hidden=false;if(!dialog.open)dialog.showModal();}else if(!dialog.open&&!session)dialog.showModal();}
    };

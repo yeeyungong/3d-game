@@ -53,8 +53,10 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
    if(a.type==='ready'&&!r.state){m.ready=!!a.ready;broadcast(r);return;}
    if(a.type==='start'){
     if(m.id!==r.hostId||r.state)return fail(ws,'只有房主可以开始。');
-    if(r.members.size!==8||[...r.members.values()].some(m=>!m.ready||!m.ws))return fail(ws,'需要 8 名玩家全部在线并准备。');
-    r.state=createGame({originalId:`p${randomInt(1,9)}`});r.state.players.forEach((p,i)=>{p.name=r.members.get(p.id).name;r.positions[p.id]=spawnPoint('hub',i);});r.last=now;broadcast(r);return;
+    if(r.members.size<4||[...r.members.values()].some(m=>!m.ready||!m.ws))return fail(ws,'需要 4–8 名玩家全部在线并准备。');
+    const ids=[...r.members.keys()];
+    r.state=createGame({originalId:ids[randomInt(ids.length)]});r.state.players=r.state.players.filter(p=>r.members.has(p.id));
+    r.state.players.forEach((p,i)=>{p.name=r.members.get(p.id).name;r.positions[p.id]=spawnPoint('hub',i);});r.last=now;broadcast(r);return;
    }
    if(!r.state)return;
    if(a.type==='input'){
@@ -69,6 +71,10 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     // Actor, time, position and task mode are never accepted from the browser.
     const safe={type:action.type,actorId:m.id,targetId:action.targetId,taskId:action.taskId,answer:action.answer,interactive:true};
     const next=reduce(r.state,safe);if(next===r.state)return fail(ws,'当前条件不满足。');r.state=next;if(['START_TASK','START_SECRET','START_MEETING','START_CORRUPT'].includes(safe.type))m.input={x:0,z:0};send(ws,snapshot(r,m));
+    if(safe.type==='ATTACK')for(const viewer of r.members.values()){
+     const a=r.positions[m.id],b=r.positions[viewer.id];
+     if(viewer.ws&&Math.hypot(a.x-b.x,a.z-b.z)<10)send(viewer.ws,{type:'combat',actorId:m.id,targetId:safe.targetId});
+    }
    }
   }catch{fail(ws,'无法处理该操作。');}});
   ws.on('close',()=>{connections.delete(ws);detach(ws);});ws.on('error',()=>{});

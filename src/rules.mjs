@@ -129,7 +129,7 @@ export function reduce(state,action) {
       s.meetingChannel={actorId:actor.id,startsAt:s.now,endsAt:s.now+3000};
     }else if(action.type==='ATTACK'){
       const target=s.players.find(p=>p.id===action.targetId);
-      if(!target?.alive||target.id===actor.id||target.room!==actor.room||s.now<s.protectionUntil||busy(s,actor.id)||(s.attackReadyAt[actor.id]||0)>s.now)return state;
+      if(!['original','converted'].includes(actor.role)||!target?.alive||target.id===actor.id||target.room!==actor.room||s.now<s.protectionUntil||busy(s,actor.id)||(s.attackReadyAt[actor.id]||0)>s.now)return state;
       target.hp=Math.max(0,target.hp-25);s.attackReadyAt[actor.id]=s.now+800;
       cancel(s,target.id);
       log(s,`你受到攻击 · 剩余 ${target.hp} 生命`,target.id);

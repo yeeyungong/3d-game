@@ -33,6 +33,7 @@ function dispatch(action){
   const previous=state;
   if(['START_TASK','START_SECRET'].includes(action.type))action={...action,interactive:true};
   state=reduce(state,{actorId,...action});
+  if(previous!==state&&action.type==='ATTACK')world?.playAttack(actorId,action.targetId);
   if(previous===state&&action.type!=='TICK')$('announcement').textContent='当前条件不满足，请查看操作提示。';
   if(previous!==state&&['START_TASK','START_SECRET'].includes(action.type)){
     const c=state.channels[actorId],definition=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];
@@ -63,7 +64,7 @@ function render(){
   $('location-title').textContent=rooms[self.room].name;
   const targetId=world?.combatTarget(),target=v.players.find(p=>p.id===targetId);
   html('pilot-status',`<b>${self.name}</b> · ${roleNames[self.role]} · HP ${self.hp}<span>${rooms[self.room].name}</span>${c?`<small>转换 ${c.used} / 2 · 秘密任务 ${c.steps} / 3</small>`:''}`);
-  html('combat-hud',`<span>${target?'目标：'+target.name:'靠近玩家以选取目标'}</span><div><button data-combat="J" ${c&&target&&available('START_CORRUPT',{targetId})?'':'disabled'}><kbd>J</kbd> 转换</button><button data-combat="K" ${target&&available('ATTACK',{targetId})?'':'disabled'}><kbd>K</kbd> 攻击</button></div>`);
+  html('combat-hud',self.role==='good'?'<span>完成任务 · 收集能量 · 投票找出内鬼</span>':`<span>${target?'目标：'+target.name:'靠近玩家以选取目标'}</span><div>${self.role==='original'?`<button data-combat="J" ${c&&target&&available('START_CORRUPT',{targetId})?'':'disabled'}><kbd>J</kbd> 转换</button>`:''}<button data-combat="K" ${target&&available('ATTACK',{targetId})?'':'disabled'}><kbd>K</kbd> 攻击</button></div>`);
   let actions='';
   if(v.channel&&!v.channel.interactive){
     const names={secret:'秘密任务进行中',task:'正在收集能量',corrupt:'正在转换目标',meeting:'正在启动会议'};
@@ -104,6 +105,8 @@ function renderResult(v){
 }
 function combatAction(key){
   if(!started||state.phase!=='explore'||document.querySelector('dialog[open]'))return;
+  const self=state.players.find(p=>p.id===actorId);
+  if(!self?.alive||self.role==='good'||key==='J'&&self.role!=='original')return;
   const targetId=world?.combatTarget();
   if(!targetId){$('announcement').textContent='靠近目标，保持视线畅通后再操作。';return;}
   dispatch({type:key==='J'?'START_CORRUPT':'ATTACK',targetId});world?.focus();
@@ -150,6 +153,7 @@ try{
 $('leave-online').onclick=()=>online?.leave();
 render();
 online=createOnline({
+ onCombat:message=>world?.playAttack(message.actorId,message.targetId),
  onLocal:()=>{if(remoteView){remoteView=null;document.body.classList.remove('online-game');reset();}$('connection-status').textContent='单人练习';$('welcome').showModal();},
  onStatus:text=>{$('connection-status').textContent=text;},
  onState:message=>{
