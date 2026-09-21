@@ -130,7 +130,7 @@ export function reduce(state,action) {
     }else if(action.type==='ATTACK'){
       const target=s.players.find(p=>p.id===action.targetId);
       if(!['original','converted'].includes(actor.role)||!target?.alive||target.id===actor.id||target.room!==actor.room||s.now<s.protectionUntil||busy(s,actor.id)||(s.attackReadyAt[actor.id]||0)>s.now)return state;
-      target.hp=Math.max(0,target.hp-25);s.attackReadyAt[actor.id]=s.now+800;
+      target.hp=0;s.attackReadyAt[actor.id]=s.now+20000;
       cancel(s,target.id);
       log(s,`你受到攻击 · 剩余 ${target.hp} 生命`,target.id);
       if(target.hp===0){target.alive=false;log(s,`${target.name} 已死亡 · 身份未知`);}

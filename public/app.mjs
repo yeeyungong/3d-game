@@ -11,6 +11,32 @@ function crewPortrait(id){return `<svg viewBox="0 0 100 110" aria-hidden="true">
 const roleNames={good:'好人',original:'原始内鬼',converted:'被转换内鬼'};
 let state=createGame(),actorId='p1',started=false,paused=false,speed=1,last=performance.now(),lastRender=0,lastAnnouncement='',world=null;
 let puzzleSession=null,online=null,remoteView=null;
+let audioContext=null,soundEnabled=true,killTimer=null;
+function unlockAudio(){
+  if(!soundEnabled)return;
+  try{audioContext??=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});}catch{}
+}
+document.addEventListener('pointerdown',unlockAudio);
+document.addEventListener('keydown',unlockAudio);
+$('sound-toggle').onclick=()=>{soundEnabled=!soundEnabled;$('sound-toggle').textContent=`音效：${soundEnabled?'开':'关'}`;$('sound-toggle').setAttribute('aria-label',soundEnabled?'关闭音效':'开启音效');if(soundEnabled)unlockAudio();};
+function killSound(volume){
+  if(!soundEnabled||audioContext?.state!=='running')return;
+  const ctx=audioContext,t=ctx.currentTime,bus=ctx.createGain();bus.gain.value=volume;bus.connect(ctx.destination);
+  const tone=ctx.createOscillator(),gain=ctx.createGain();tone.type='triangle';tone.frequency.setValueAtTime(180,t);tone.frequency.exponentialRampToValueAtTime(38,t+.3);gain.gain.setValueAtTime(.001,t);gain.gain.exponentialRampToValueAtTime(.65,t+.015);gain.gain.exponentialRampToValueAtTime(.001,t+.4);tone.connect(gain);gain.connect(bus);tone.start(t);tone.stop(t+.42);
+  const buffer=ctx.createBuffer(1,Math.floor(ctx.sampleRate*.25),ctx.sampleRate),data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2);
+  const noise=ctx.createBufferSource(),filter=ctx.createBiquadFilter();noise.buffer=buffer;filter.type='bandpass';filter.frequency.setValueAtTime(2200,t);filter.frequency.exponentialRampToValueAtTime(180,t+.25);noise.connect(filter);filter.connect(bus);noise.start(t);noise.onended=()=>{noise.disconnect();filter.disconnect();};tone.onended=()=>{tone.disconnect();gain.disconnect();bus.disconnect();};
+}
+function showKill(killerId,targetId){
+  world?.playAttack(killerId,targetId);
+  const involved=actorId===killerId||actorId===targetId;killSound(involved?.45:.12);
+  if(!involved)return;
+  const dialog=$('kill-cinematic');clearTimeout(killTimer);
+  dialog.querySelector('.kill-cast').innerHTML=`<div class="kill-attacker">${crewPortrait(killerId)}</div><div class="kill-impact">✦</div><div class="kill-victim">${crewPortrait(targetId)}</div>`;
+  dialog.querySelector('.kill-title').textContent=actorId===targetId?'你被淘汰了':'目标已淘汰';
+  if(!dialog.open)dialog.showModal();
+  killTimer=setTimeout(()=>dialog.close(),1400);
+}
+$('kill-cinematic').addEventListener('cancel',event=>event.preventDefault());
 const minigames=createMinigames($('task-dialog'),{submit:answer=>dispatch({type:'SOLVE_PUZZLE',answer}),cancel:()=>{if(puzzleSession){if(remoteView)online.sendAction({type:'CANCEL_INTERACTION'});else state=reduce(state,{type:'CANCEL_INTERACTION',actorId:puzzleSession.actorId});}puzzleSession=null;minigames.close();render();world?.focus();}});
 const seconds=n=>Math.max(0,Math.ceil(n/1000));
 const time=n=>`${String(Math.floor(n/60000)).padStart(2,'0')}:${String(Math.floor(n/1000)%60).padStart(2,'0')}`;
@@ -33,13 +59,13 @@ function dispatch(action){
   const previous=state;
   if(['START_TASK','START_SECRET'].includes(action.type))action={...action,interactive:true};
   state=reduce(state,{actorId,...action});
-  if(previous!==state&&action.type==='ATTACK')world?.playAttack(actorId,action.targetId);
   if(previous===state&&action.type!=='TICK')$('announcement').textContent='当前条件不满足，请查看操作提示。';
   if(previous!==state&&['START_TASK','START_SECRET'].includes(action.type)){
     const c=state.channels[actorId],definition=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];
     puzzleSession={actorId,startsAt:c.startsAt};minigames.open(definition.room,definition.name);
   }
   render();
+  if(previous!==state&&action.type==='ATTACK')showKill(actorId,action.targetId);
 }
 function reset(){
   if(remoteView){online.leave();return;}
@@ -64,7 +90,7 @@ function render(){
   $('location-title').textContent=rooms[self.room].name;
   const targetId=world?.combatTarget(),target=v.players.find(p=>p.id===targetId);
   html('pilot-status',`<b>${self.name}</b> · ${roleNames[self.role]} · HP ${self.hp}<span>${rooms[self.room].name}</span>${c?`<small>转换 ${c.used} / 2 · 秘密任务 ${c.steps} / 3</small>`:''}`);
-  html('combat-hud',self.role==='good'?'<span>完成任务 · 收集能量 · 投票找出内鬼</span>':`<span>${target?'目标：'+target.name:'靠近玩家以选取目标'}</span><div>${self.role==='original'?`<button data-combat="J" ${c&&target&&available('START_CORRUPT',{targetId})?'':'disabled'}><kbd>J</kbd> 转换</button>`:''}<button data-combat="K" ${target&&available('ATTACK',{targetId})?'':'disabled'}><kbd>K</kbd> 攻击</button></div>`);
+  html('combat-hud',self.role==='good'?'<span>完成任务 · 收集能量 · 投票找出内鬼</span>':`<span>${target?'目标：'+target.name:'靠近玩家以选取目标'}</span><div>${self.role==='original'?`<button data-combat="J" ${c&&target&&available('START_CORRUPT',{targetId})?'':'disabled'}><kbd>J</kbd> 转换</button>`:''}<button data-combat="K" ${target&&available('ATTACK',{targetId})?'':'disabled'}><kbd>K</kbd> ${v.attackReadyAt>v.now?`冷却 ${seconds(v.attackReadyAt-v.now)}s`:'击杀'}</button></div>`);
   let actions='';
   if(v.channel&&!v.channel.interactive){
     const names={secret:'秘密任务进行中',task:'正在收集能量',corrupt:'正在转换目标',meeting:'正在启动会议'};
@@ -153,7 +179,7 @@ try{
 $('leave-online').onclick=()=>online?.leave();
 render();
 online=createOnline({
- onCombat:message=>world?.playAttack(message.actorId,message.targetId),
+ onCombat:message=>showKill(message.actorId,message.targetId),
  onLocal:()=>{if(remoteView){remoteView=null;document.body.classList.remove('online-game');reset();}$('connection-status').textContent='单人练习';$('welcome').showModal();},
  onStatus:text=>{$('connection-status').textContent=text;},
  onState:message=>{

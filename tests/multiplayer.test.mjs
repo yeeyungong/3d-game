@@ -20,7 +20,7 @@ test('eight real connections: invite, permissions, private views, motion and rec
   const r=game.rooms.get(code);const before={...r.positions.p1};host.send({type:'action',action:{type:'TICK',now:99999999}});host.send({type:'action',action:{type:'MOVE',room:'lab'}});host.send({type:'input',x:1,z:0,sprint:false});
   await host.wait('state',m=>m.view.positions.p1.x>before.x+.05);assert.equal(r.state.players[0].room,'hub');assert.ok(r.state.now<10000);
   const hp=r.state.players[7].hp;host.send({type:'action',action:{type:'ATTACK',targetId:'p8',actorId:'p8'}});await host.wait('error');assert.equal(r.state.players[7].hp,hp);
-  const attacker=r.state.players.find(p=>p.role==='original'),victim=r.state.players.find(p=>p.role==='good');
+  const attacker=r.state.players.find(p=>p.role==='original'),victim=r.state.players.find(p=>p.role==='good'&&p.id!=='p1');
   r.state.protectionUntil=0;r.positions[attacker.id]={x:0,z:0};r.positions[victim.id]={x:1,z:0};
   for(const p of r.state.players)if(p!==attacker&&p!==victim)r.positions[p.id]={x:20,z:20};
   const bad=clients[Number(attacker.id.slice(1))-1],good=clients[Number(victim.id.slice(1))-1];
@@ -28,6 +28,7 @@ test('eight real connections: invite, permissions, private views, motion and rec
   good.send({type:'action',action:{type:'START_CORRUPT',targetId:attacker.id}});await good.wait('error');assert.equal(r.state.corruption.channel,null);
   bad.send({type:'action',action:{type:'ATTACK',targetId:victim.id}});
   const hit=await good.wait('combat');assert.equal(hit.actorId,attacker.id);assert.equal(hit.targetId,victim.id);
+  assert.equal(r.state.players.find(p=>p.id===victim.id).alive,false);
   assert.equal((await bad.wait('combat')).targetId,victim.id);
   r.state.players[0].room='power';r.positions.p1={x:-23.8,z:-23.8};
   host.send({type:'action',action:{type:'START_TASK',taskId:'power-calibration',interactive:false}});

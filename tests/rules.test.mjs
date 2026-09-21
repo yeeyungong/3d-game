@@ -140,17 +140,21 @@ test('good players cannot attack or convert; converted players cannot convert',(
   assert.notEqual(act(s,'ATTACK',{actorId:'p2',targetId:'p3'}),s);
 });
 
-test('attack respects protection and cooldown',()=>{
+test('one hit kills and a 20-second cooldown prevents the next kill',()=>{
   let s=createGame();
   s.players[1].role='converted';
   assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p1'}),s);
   s=act(s,'TICK',{now:15000});
-  for(let i=0;i<4;i++){
-    s=act(s,'ATTACK',{actorId:'p2',targetId:'p1'});
-    if(i<3){assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p1'}),s);s=act(s,'TICK',{now:s.now+800});}
-  }
+  s=act(s,'ATTACK',{actorId:'p2',targetId:'p1'});
+  assert.equal(s.players[0].hp,0);
   assert.equal(s.players[0].alive,false);
   assert.equal(s.winner,null);
+  assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p3'}),s);
+  s=act(s,'TICK',{now:34999});
+  assert.equal(act(s,'ATTACK',{actorId:'p2',targetId:'p3'}),s);
+  s=act(s,'TICK',{now:35000});
+  s=act(s,'ATTACK',{actorId:'p2',targetId:'p3'});
+  assert.equal(s.players[2].alive,false);
 });
 test('third good converted triggers immediate traitor victory',()=>{
   let s=ready();for(let i=4;i<8;i++)s.players[i].alive=false;
@@ -209,7 +213,9 @@ test('damage cancels task and conversion; different rooms cannot be attacked',()
   s=act(s,'MOVE',{actorId:'p1',room:'power'});
   s=act(s,'ATTACK',{actorId:'p1',targetId:'p2'});
   assert.equal(s.channels.p2,undefined);
-  s=act(s,'START_CORRUPT',{actorId:'p1',targetId:'p2'});
+  s=act(s,'MOVE',{actorId:'p4',room:'power'});
+  s=act(s,'START_CORRUPT',{actorId:'p1',targetId:'p4'});
+  assert.ok(s.corruption.channel);
   s.players[2].role='converted';
   s=act(s,'MOVE',{actorId:'p3',room:'power'});
   s=act(s,'ATTACK',{actorId:'p3',targetId:'p1'});
