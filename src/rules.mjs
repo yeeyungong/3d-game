@@ -1,15 +1,16 @@
-import {validPuzzle} from './puzzles.mjs';
+import {generatePuzzle,validPuzzle} from './puzzles.mjs';
 export const rooms={hub:{name:'中央大厅',adj:['power','lab','storage','comms']},power:{name:'供电区',adj:['hub','lab','storage']},lab:{name:'实验室',adj:['hub','power','comms']},storage:{name:'仓储区',adj:['hub','power','comms']},comms:{name:'通讯区',adj:['hub','lab','storage']}};
 export const tasks={
+ 'hub-maintenance':{name:'维护大厅终端',room:'hub',duration:10000,reward:10,cooldown:60000},
  'power-calibration':{name:'校准供电设备',room:'power',duration:12000,reward:15,cooldown:60000},
  'lab-calibration':{name:'校准样本仪器',room:'lab',duration:12000,reward:15,cooldown:60000},
  'storage-cache':{name:'搜索能量箱',room:'storage',duration:3000,reward:5,cooldown:90000},
  'comms-cache':{name:'回收备用能量',room:'comms',duration:3000,reward:5,cooldown:90000}
 };
 export const secrets=[{name:'植入污染装置',room:'power',duration:8000},{name:'盗取侵蚀样本',room:'lab',duration:6000},{name:'上传污染程序',room:'comms',duration:10000}];
-export function createGame({originalId='p1'}={}) {
+export function createGame({originalId='p1',puzzleSeed=Math.floor(Math.random()*4294967296)}={}) {
   const names=['林舟','许岚','陈默','苏禾','沈遥','陆川','白露','江屿'];
-  return {now:0,phase:'explore',winner:null,energy:0,
+  return {now:0,phase:'explore',winner:null,energy:0,puzzleSeed,taskProgress:{},
     players:names.map((name,i)=>({id:`p${i+1}`,name,role:`p${i+1}`===originalId?'original':'good',alive:true,hp:100,room:'hub'})),
     corruption:{used:0,steps:0,readyAt:15000,channel:null},
     channels:{},taskReadyAt:{},attackReadyAt:{},meeting:null,meetingChannel:null,
@@ -29,6 +30,12 @@ function cancel(s,id){
   if(s.meetingChannel?.actorId===id)s.meetingChannel=null;
 }
 function busy(s,id){return Boolean(s.channels[id]||s.corruption.channel?.actorId===id||s.meetingChannel?.actorId===id);}
+function progress(s,id){return s.taskProgress[id]??={completed:0,level:1,streak:0,failures:0,serial:0,last:{}};}
+function newPuzzle(s,id,room){
+ const p=progress(s,id);p.serial++;
+ const puzzle=generatePuzzle(room,p.level,(s.puzzleSeed+Number(id.slice(1))*7919+p.serial*104729)>>>0,p.last[room],`${id}-${p.serial}`);
+ p.last[room]=puzzle.kind;return puzzle;
+}
 function finishMeeting(s){
   const m=s.meeting,counts={};
   for(const id of m.aliveIds){const target=m.votes[id];if(target)counts[target]=(counts[target]||0)+1;}
@@ -74,6 +81,7 @@ function advance(s,to){
           s.taskReadyAt[c.taskId]=s.now+t.cooldown;
           log(s,`${s.players.find(p=>p.id===id).name} 完成${t.name} · +${t.reward} 能量`);
         }
+        if(c.interactive){const p=progress(s,id);p.completed++;p.failures=0;p.streak++;if(p.streak>=3){p.level=Math.min(3,p.level+1);p.streak=0;}}
         delete s.channels[id];
       }
       const c=s.corruption.channel;
@@ -112,14 +120,21 @@ export function reduce(state,action) {
       const t=tasks[action.taskId];
       if(!t||t.room!==actor.room||busy(s,actor.id)||(s.taskReadyAt[action.taskId]||0)>s.now||Object.values(s.channels).some(c=>c.taskId===action.taskId))return state;
       s.channels[actor.id]={kind:'task',taskId:action.taskId,startsAt:s.now,endsAt:action.interactive?null:s.now+t.duration,interactive:!!action.interactive};
+      if(action.interactive)s.channels[actor.id].puzzle=newPuzzle(s,actor.id,t.room);
     }else if(action.type==='SOLVE_PUZZLE'){
       const c=s.channels[actor.id];
-      if(!c?.interactive||c.solved||!validPuzzle(c.kind==='secret'?secrets[c.step].room:tasks[c.taskId].room,action.answer))return state;
+      if(!c?.interactive||c.solved||action.puzzleId!==c.puzzle.id||!Array.isArray(action.answer)||action.answer.length>20||action.answer.some(v=>!Number.isFinite(v)))return state;
+      if(!validPuzzle(c.puzzle,action.answer)){
+       const p=progress(s,actor.id);p.failures++;c.feedback='答案尚未匹配，请检查后重试。';
+       if(p.failures>=3){p.level=Math.max(1,p.level-1);p.failures=0;p.streak=0;c.puzzle=newPuzzle(s,actor.id,c.puzzle.room);c.feedback='已为你调整题目难度，再试一次。';}
+       return s;
+      }
       c.solved=true;c.endsAt=s.now+300;
     }else if(action.type==='START_SECRET'){
       const t=secrets[s.corruption.steps];
       if(actor.role!=='original'||!t||t.room!==actor.room||busy(s,actor.id)||s.now<s.protectionUntil)return state;
       s.channels[actor.id]={kind:'secret',step:s.corruption.steps,startsAt:s.now,endsAt:action.interactive?null:s.now+t.duration,interactive:!!action.interactive};
+      if(action.interactive)s.channels[actor.id].puzzle=newPuzzle(s,actor.id,t.room);
     }else if(action.type==='START_CORRUPT'){
       const target=s.players.find(p=>p.id===action.targetId);
       if(actor.role!=='original'||busy(s,actor.id)||!target?.alive||target.role!=='good'||target.room!==actor.room||s.now<s.protectionUntil||s.now<s.corruption.readyAt||s.corruption.used>=1+Number(s.corruption.steps===3))return state;

@@ -33,7 +33,8 @@ test('eight real connections: invite, permissions, private views, motion and rec
   r.state.players[0].room='power';r.positions.p1={x:-23.8,z:-23.8};
   host.send({type:'action',action:{type:'START_TASK',taskId:'power-calibration',interactive:false}});
   await host.wait('state',m=>m.view.channel?.kind==='task');assert.equal(r.state.channels.p1.interactive,true);
-  host.send({type:'action',action:{type:'SOLVE_PUZZLE',answer:[2,0,3,1]}});
+  const puzzle=r.state.channels.p1.puzzle;
+  host.send({type:'action',action:{type:'SOLVE_PUZZLE',puzzleId:puzzle.id,answer:puzzle.answer}});
   await host.wait('state',m=>m.view.energy===15);await clients[1].wait('state',m=>m.view.energy===15);
   host.ws.close();await new Promise(r=>setTimeout(r,30));const resumed=await client(url);clients.push(resumed);resumed.send({type:'resume',code,token:joined.token});assert.equal((await resumed.wait('joined')).actorId,'p1');assert.equal((await resumed.wait('state')).view.self.name,'船长');
  }finally{for(const c of clients)c.ws.terminate();game.close();await new Promise(r=>server.close(r));}
@@ -54,5 +55,18 @@ test('four players can start, with no phantom players after someone leaves the l
   const states=await Promise.all(active.map(c=>c.wait('state')));
   assert.equal(states.filter(s=>s.view.self.role==='original').length,1);
   for(const s of states){assert.deepEqual(s.view.players.map(p=>p.id),['p1','p3','p4','p5']);assert.equal(s.view.phase,'explore');assert.equal(s.view.winner,null);}
+ }finally{for(const c of clients)c.ws.terminate();game.close();await new Promise(r=>server.close(r));}
+});
+
+test('active randomized puzzle survives reconnect and only its owner can submit',async()=>{
+ const server=createServer(),game=attachMultiplayer(server);await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`ws://127.0.0.1:${server.address().port}/multiplayer`,clients=[];
+ try{
+  const host=await client(url);clients.push(host);host.send({type:'create',name:'Host'});const joined=await host.wait('joined');
+  for(let i=1;i<4;i++){const c=await client(url);clients.push(c);c.send({type:'join',code:joined.code,name:`Crew${i}`});await c.wait('joined');}
+  for(const c of clients)c.send({type:'ready',ready:true});await host.wait('lobby',m=>m.players.length===4&&m.players.every(p=>p.ready));host.send({type:'start'});await host.wait('state');
+  host.send({type:'action',action:{type:'START_TASK',taskId:'hub-maintenance'}});const first=await host.wait('state',m=>!!m.view.channel?.puzzle);const puzzle=first.view.channel.puzzle;
+  clients[1].send({type:'action',action:{type:'SOLVE_PUZZLE',actorId:'p1',puzzleId:puzzle.id,answer:puzzle.answer}});await clients[1].wait('error');assert.equal(game.rooms.get(joined.code).state.energy,0);
+  host.ws.close();await new Promise(r=>setTimeout(r,30));const resumed=await client(url);clients.push(resumed);resumed.send({type:'resume',code:joined.code,token:joined.token});await resumed.wait('joined');const view=(await resumed.wait('state')).view;assert.deepEqual(view.channel.puzzle,puzzle);
+  resumed.send({type:'action',action:{type:'SOLVE_PUZZLE',puzzleId:puzzle.id,answer:puzzle.answer}});const done=await resumed.wait('state',m=>m.view.energy===10);assert.equal(done.view.taskProgress.completed,1);
  }finally{for(const c of clients)c.ws.terminate();game.close();await new Promise(r=>server.close(r));}
 });

@@ -37,7 +37,7 @@ function showKill(killerId,targetId){
   killTimer=setTimeout(()=>dialog.close(),1400);
 }
 $('kill-cinematic').addEventListener('cancel',event=>event.preventDefault());
-const minigames=createMinigames($('task-dialog'),{submit:answer=>dispatch({type:'SOLVE_PUZZLE',answer}),cancel:()=>{if(puzzleSession){if(remoteView)online.sendAction({type:'CANCEL_INTERACTION'});else state=reduce(state,{type:'CANCEL_INTERACTION',actorId:puzzleSession.actorId});}puzzleSession=null;minigames.close();render();world?.focus();}});
+const minigames=createMinigames($('task-dialog'),{submit:(answer,puzzleId)=>dispatch({type:'SOLVE_PUZZLE',answer,puzzleId}),cancel:()=>{if(puzzleSession){if(remoteView)online.sendAction({type:'CANCEL_INTERACTION'});else state=reduce(state,{type:'CANCEL_INTERACTION',actorId:puzzleSession.actorId});}puzzleSession=null;minigames.close();render();world?.focus();}});
 const seconds=n=>Math.max(0,Math.ceil(n/1000));
 const time=n=>`${String(Math.floor(n/60000)).padStart(2,'0')}:${String(Math.floor(n/1000)%60).padStart(2,'0')}`;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -62,8 +62,9 @@ function dispatch(action){
   if(previous===state&&action.type!=='TICK')$('announcement').textContent='当前条件不满足，请查看操作提示。';
   if(previous!==state&&['START_TASK','START_SECRET'].includes(action.type)){
     const c=state.channels[actorId],definition=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];
-    puzzleSession={actorId,startsAt:c.startsAt};minigames.open(definition.room,definition.name);
+    puzzleSession={actorId,puzzleId:c.puzzle.id};minigames.open(c.puzzle,definition.name);
   }
+  if(action.type==='SOLVE_PUZZLE'&&state.channels[actorId]?.puzzle.id!==puzzleSession?.puzzleId){const c=state.channels[actorId];if(c){puzzleSession={actorId,puzzleId:c.puzzle.id};minigames.open(c.puzzle,c.kind==='secret'?secrets[c.step].name:tasks[c.taskId].name);}}
   render();
   if(previous!==state&&action.type==='ATTACK')showKill(actorId,action.targetId);
 }
@@ -103,7 +104,7 @@ function render(){
     if(self.room==='hub')actions+=`<div class="operation"><p>消耗 100 能量，召集所有存活玩家讨论并投票。</p>${button('启动会议 <span>→</span>','START_MEETING',{},'primary','需要100能量，且不能同时进行其他操作')}<p class="hint">${v.energy<100?`还需要 ${100-v.energy} 点能量`:'终端就绪 · 引导 3 秒'}</p></div>`;
     for(const [id,t] of Object.entries(tasks).filter(([,t])=>t.room===self.room)){
       const remaining=seconds((v.taskReadyAt[id]||0)-v.now);
-      actions+=`<div class="operation"><p>${t.name} · 互动任务</p>${button(`${t.name} <span>+${t.reward} ϟ</span>`,'START_TASK',{taskId:id},'primary','终端冷却、被占用或正在操作')}<p class="hint">${remaining?`终端恢复中 · ${remaining}s`:v.energy===100?'能量已满，溢出奖励不会保留':'完成后能量自动加入公共池'}</p></div>`;
+      actions+=`<div class="operation"><p>${t.name} · 随机任务</p><p class="task-level">${['入门','进阶','挑战'][(v.taskProgress?.level||1)-1]} · 本局已完成 ${v.taskProgress?.completed||0} 项</p>${button(`${t.name} <span>+${t.reward} ϟ</span>`,'START_TASK',{taskId:id},'primary','终端冷却、被占用或正在操作')}<p class="hint">${remaining?`终端恢复中 · ${remaining}s`:v.energy===100?'能量已满，溢出奖励不会保留':'完成后能量自动加入公共池'}</p></div>`;
     }
     if(c&&secrets[c.steps]?.room===self.room)actions+=`<div class="operation"><p class="violet">秘密任务 / 仅你可见</p>${button(secrets[c.steps].name,'START_SECRET',{},'violet','保护期间或当前已有操作')}<p class="hint">完成面板操作以推进秘密任务</p></div>`;
 
@@ -187,7 +188,7 @@ online=createOnline({
   const v=remoteView;
   state={network:true,now:v.now,phase:v.phase,winner:v.winner,players:v.players.map(p=>({...p,role:p.id===actorId?v.self.role:'unknown',hp:p.id===actorId?v.self.hp:100,position:v.positions[p.id]})),channels:{},corruption:v.corruption||{used:0,channel:null},meetingChannel:null};
   if(v.channel&&['task','secret'].includes(v.channel.kind))state.channels[actorId]=v.channel;
-  if(v.channel?.interactive&&!puzzleSession){const c=v.channel,def=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];puzzleSession={actorId,startsAt:c.startsAt};minigames.open(def.room,def.name);}
+  if(v.channel?.interactive&&v.channel.puzzle.id!==puzzleSession?.puzzleId){const c=v.channel,def=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];puzzleSession={actorId,puzzleId:c.puzzle.id};minigames.open(c.puzzle,def.name);}
   render();
  }
 });requestAnimationFrame(frame);

@@ -69,7 +69,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
      const target=nearestTarget(r.state.players.map(p=>({...p,position:r.positions[p.id]})),m.id);if(!target||target!==action.targetId)return fail(ws,'目标太远或被遮挡。');
     }
     // Actor, time, position and task mode are never accepted from the browser.
-    const safe={type:action.type,actorId:m.id,targetId:action.targetId,taskId:action.taskId,answer:action.answer,interactive:true};
+    const safe={type:action.type,actorId:m.id,targetId:action.targetId,taskId:action.taskId,answer:action.answer,puzzleId:action.puzzleId,interactive:true};
     const next=reduce(r.state,safe);if(next===r.state)return fail(ws,'当前条件不满足。');r.state=next;if(['START_TASK','START_SECRET','START_MEETING','START_CORRUPT'].includes(safe.type))m.input={x:0,z:0};send(ws,snapshot(r,m));
     if(safe.type==='ATTACK')for(const viewer of r.members.values()){
      const a=r.positions[m.id],b=r.positions[viewer.id];

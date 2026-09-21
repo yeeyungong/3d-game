@@ -233,10 +233,11 @@ test('interactive task requires correct puzzle, interruption never grants energy
  let s=act(ready(),'MOVE',{actorId:'p2',room:'power'});
  s=act(s,'START_TASK',{actorId:'p2',taskId:'power-calibration',interactive:true});
  s=act(s,'TICK',{now:100000});assert.equal(s.energy,0);assert.ok(s.channels.p2);
- assert.equal(act(s,'SOLVE_PUZZLE',{actorId:'p2',answer:[0,1,2,3]}),s);
+ const puzzle=s.channels.p2.puzzle;
+ const wrong=act(s,'SOLVE_PUZZLE',{actorId:'p2',puzzleId:puzzle.id,answer:[-1]});assert.equal(wrong.energy,0);assert.equal(wrong.channels.p2.solved,undefined);
  const cancelled=act(s,'CANCEL_INTERACTION',{actorId:'p2'});
- assert.equal(act(cancelled,'SOLVE_PUZZLE',{actorId:'p2',answer:[2,0,3,1]}),cancelled);
- s=act(s,'SOLVE_PUZZLE',{actorId:'p2',answer:[2,0,3,1]});
+ assert.equal(act(cancelled,'SOLVE_PUZZLE',{actorId:'p2',puzzleId:puzzle.id,answer:puzzle.answer}),cancelled);
+ s=act(s,'SOLVE_PUZZLE',{actorId:'p2',puzzleId:puzzle.id,answer:puzzle.answer});
  s=act(s,'TICK',{now:101000});assert.equal(s.energy,15);assert.equal(s.channels.p2,undefined);
  s=act(s,'TICK',{now:102000});assert.equal(s.energy,15);
 });
