@@ -1,0 +1,8 @@
+node_modules/
+.npm-cache/
+tests/latest.txt
+dist/
+.env
+.env.local
+.env.*
+!.env.example

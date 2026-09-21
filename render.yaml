@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: shadow-protocol-server
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: ALLOWED_ORIGINS
+        sync: false
