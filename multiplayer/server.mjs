@@ -3,14 +3,16 @@ import {WebSocketServer} from 'ws';
 import {createGame,reduce,tasks} from '../src/rules.mjs';
 import {playerView} from '../src/views.mjs';
 import {spawnPoint,movePosition,zoneAt,nearestTarget} from '../src/world.mjs';
+import {createCommunication} from './communication.mjs';
 
 export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
- const wss=new WebSocketServer({server,path:'/multiplayer',maxPayload:4096,verifyClient:({origin})=>!origin||origins.includes(origin)});
+ const wss=new WebSocketServer({server,path:'/multiplayer',maxPayload:32768,verifyClient:({origin})=>!origin||origins.includes(origin)});
  const rooms=new Map(),connections=new Set();
- const send=(ws,msg)=>{if(ws.readyState===1&&ws.bufferedAmount<262144)ws.send(JSON.stringify(msg));};
+ const send=(ws,msg)=>{if(ws.readyState!==1||ws.bufferedAmount>=262144)return false;ws.send(JSON.stringify(msg));return true;};
  const fail=(ws,message)=>send(ws,{type:'error',message});
+ const communication=createCommunication(send);
  function lobby(r){return {type:'lobby',code:r.code,hostId:r.hostId,players:[...r.members.values()].map(m=>({id:m.id,name:m.name,ready:m.ready,connected:!!m.ws})),started:!!r.state};}
- function broadcast(r){for(const m of r.members.values())if(m.ws)send(m.ws,lobby(r));}
+ function broadcast(r){for(const m of r.members.values())if(m.ws)send(m.ws,lobby(r));communication.sync(r);}
  function snapshot(r,m){
   const v=playerView(r.state,m.id);v.log=v.log.slice(-30);v.positions=r.positions;v.allowed=[];
   const add=(type,extra={})=>{if(reduce(r.state,{type,actorId:m.id,...extra})!==r.state)v.allowed.push(`${type}-${extra.taskId||extra.targetId||''}`);};
@@ -19,12 +21,12 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
   if(target){add('ATTACK',{targetId:target});if(v.corruption)add('START_CORRUPT',{targetId:target});}
   return {type:'state',actorId:m.id,view:v};
  }
- function detach(ws){const r=rooms.get(ws.room),m=r?.members.get(ws.actorId);if(!m||m.ws!==ws)return;m.ws=null;m.input={x:0,z:0};m.disconnectedAt=Date.now();broadcast(r);}
+ function detach(ws){const r=rooms.get(ws.room),m=r?.members.get(ws.actorId);if(!m||m.ws!==ws)return;m.ws=null;m.voiceSession=null;m.communicationSignature=null;m.input={x:0,z:0};m.disconnectedAt=Date.now();broadcast(r);}
  wss.on('connection',ws=>{
   if(connections.size>=800){ws.close(1013);return;}ws.connectedAt=Date.now();
   connections.add(ws);ws.alive=true;ws.on('pong',()=>ws.alive=true);
   ws.on('message',data=>{try{
-   const now=Date.now();if(now-(ws.rateAt||0)>1000){ws.rateAt=now;ws.count=0;}if(++ws.count>65)return fail(ws,'操作太频繁，请稍后再试。');
+   const now=Date.now();if(now-(ws.rateAt||0)>1000){ws.rateAt=now;ws.count=0;}if(++ws.count>200)return fail(ws,'操作太频繁，请稍后再试。');
    const a=JSON.parse(data);if(!a||typeof a.type!=='string')return;
    if(['create','join','resume'].includes(a.type)){
     if(ws.room)return fail(ws,'已经加入房间。');
@@ -38,7 +40,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     let m;
     if(a.type==='resume'){
      m=[...r.members.values()].find(m=>m.token===a.token);if(!m)return fail(ws,'重新连接失败，请重新加入房间。');
-     if(m.ws){m.ws.close(4001,'Session replaced');}m.ws=ws;
+     if(m.ws){m.ws.close(4001,'Session replaced');}m.ws=ws;m.voiceSession=null;m.communicationSignature=null;
     }else{
      if(r.state)return fail(ws,'游戏已经开始，只允许原玩家重新连接。');
      if(r.members.size>=8)return fail(ws,'房间已满（8 人）。');
@@ -49,6 +51,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     ws.room=r.code;ws.actorId=m.id;send(ws,{type:'joined',code:r.code,actorId:m.id,token:m.token});broadcast(r);if(r.state)send(ws,snapshot(r,m));return;
    }
    const r=rooms.get(ws.room),m=r?.members.get(ws.actorId);if(!r||m?.ws!==ws)return fail(ws,'请先加入房间。');
+   if(communication.handle(r,m,a))return;
    if(a.type==='leave'){r.members.delete(m.id);ws.room=null;ws.actorId=null;if(r.state){r.state=reduce(r.state,{type:'CANCEL_INTERACTION',actorId:m.id});const p=r.state.players.find(p=>p.id===m.id);p.alive=false;p.hp=0;r.state=reduce(r.state,{type:'TICK',now:r.state.now+1});}if(r.hostId===m.id)r.hostId=r.members.keys().next().value;broadcast(r);return;}
    if(a.type==='ready'&&!r.state){m.ready=!!a.ready;broadcast(r);return;}
    if(a.type==='start'){
@@ -70,7 +73,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     }
     // Actor, time, position and task mode are never accepted from the browser.
     const safe={type:action.type,actorId:m.id,targetId:action.targetId,taskId:action.taskId,answer:action.answer,puzzleId:action.puzzleId,interactive:true};
-    const next=reduce(r.state,safe);if(next===r.state)return fail(ws,'当前条件不满足。');r.state=next;if(['START_TASK','START_SECRET','START_MEETING','START_CORRUPT'].includes(safe.type))m.input={x:0,z:0};send(ws,snapshot(r,m));
+    const next=reduce(r.state,safe);if(next===r.state)return fail(ws,'当前条件不满足。');r.state=next;communication.sync(r);if(['START_TASK','START_SECRET','START_MEETING','START_CORRUPT'].includes(safe.type))m.input={x:0,z:0};send(ws,snapshot(r,m));
     if(safe.type==='ATTACK')for(const viewer of r.members.values()){
      const a=r.positions[m.id],b=r.positions[viewer.id];
      if(viewer.ws&&Math.hypot(a.x-b.x,a.z-b.z)<10)send(viewer.ws,{type:'combat',actorId:m.id,targetId:safe.targetId});
@@ -84,7 +87,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
   const now=Date.now();tickCount++;for(const [code,r] of rooms){
    for(const [id,m] of r.members)if(!m.ws&&now-m.disconnectedAt>120000){r.members.delete(id);if(!r.state&&r.hostId===id)r.hostId=r.members.keys().next().value;if(r.state){r.state=reduce(r.state,{type:'CANCEL_INTERACTION',actorId:id});const p=r.state.players.find(p=>p.id===id);p.alive=false;p.hp=0;}broadcast(r);}
    if(!r.members.size||now-r.createdAt>6*3600000){for(const m of r.members.values())m.ws?.close(4000,'Room expired');rooms.delete(code);continue;}
-   if(!r.state)continue;
+   if(!r.state){communication.sync(r);continue;}
    const dt=Math.min(.1,(now-r.last)/1000);r.last=now;
    if(r.state.phase==='explore')for(const m of r.members.values()){
     const p=r.state.players.find(p=>p.id===m.id);if(!p.alive||!m.ws||now-m.lastInput>300)continue;
@@ -92,6 +95,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     if(Math.hypot(after.x-before.x,after.z-before.z)>.0001){r.state=reduce(r.state,{type:'CANCEL_INTERACTION',actorId:m.id});r.positions[m.id]=after;const zone=zoneAt(after);if(zone!==p.room)r.state=reduce(r.state,{type:'MOVE',actorId:m.id,room:zone});}
    }
    r.state=reduce(r.state,{type:'TICK',now:r.state.now+dt*1000});
+   communication.sync(r);
    if(tickCount%2===0)for(const m of r.members.values())if(m.ws)send(m.ws,snapshot(r,m));
   }
  },50);interval.unref();

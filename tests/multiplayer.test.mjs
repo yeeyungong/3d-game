@@ -3,7 +3,49 @@ import assert from 'node:assert/strict';
 import {WebSocket} from 'ws';
 import {createServer} from '../server.mjs';
 import {attachMultiplayer} from '../multiplayer/server.mjs';
+import {createGame} from '../src/rules.mjs';
 function client(url){return new Promise((resolve,reject)=>{const ws=new WebSocket(url),messages=[];ws.on('message',s=>messages.push(JSON.parse(s)));ws.on('error',reject);ws.on('open',()=>resolve({ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(type,predicate=()=>true){const end=Date.now()+4000;while(Date.now()<end){const i=messages.findIndex(m=>m.type===type&&predicate(m));if(i>=0)return messages.splice(i,1)[0];await new Promise(r=>setTimeout(r,15));}throw Error(`Timeout waiting for ${type}`);}}));});}
+
+test('room communication authenticates messages, isolates channels and requires voice opt-in',async()=>{
+ const server=createServer(),game=attachMultiplayer(server);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const url=`ws://127.0.0.1:${server.address().port}/multiplayer`,clients=[];
+ try{
+  for(let i=0;i<5;i++)clients.push(await client(url));
+  const [host,crew,ghost,outsider,stranger]=clients;
+  host.send({type:'create',name:'Host'});const joined=await host.wait('joined');
+  for(const [i,c] of [crew,ghost].entries()){c.send({type:'join',code:joined.code,name:`Crew${i}`});await c.wait('joined');}
+  outsider.send({type:'create',name:'Other'});await outsider.wait('joined');
+  await host.wait('communication');
+  stranger.send({type:'chat',text:'intrude'});await stranger.wait('error');
+  host.send({type:'chat',text:'  你好 <b>crew</b>  ',requestId:'a',name:'Fake',actorId:'p2',channel:'ghost'});
+  const chat=await crew.wait('chat');assert.equal(chat.name,'Host');assert.equal(chat.actorId,'p1');assert.equal(chat.text,'你好 <b>crew</b>');assert.equal(chat.channel,'all');await ghost.wait('chat');await host.wait('chat');
+  assert.ok(!outsider.messages.some(m=>m.type==='chat'));
+  crew.send({type:'chat',text:' '.repeat(5),requestId:'empty'});assert.equal((await crew.wait('communication-error')).requestId,'empty');
+  crew.send({type:'chat',text:'x'.repeat(301)});await crew.wait('communication-error');
+  crew.send({type:'chat',text:'one'});await host.wait('chat',m=>m.text==='one');
+  crew.send({type:'chat',text:'two'});assert.match((await crew.wait('communication-error')).message,/频繁/);
+  host.send({type:'voice-join'});const hc=await host.wait('communication',m=>m.peers.some(p=>p.id==='p1'&&p.voiceSession));
+  const hs=hc.peers.find(p=>p.id==='p1').voiceSession;assert.ok(Array.isArray(hc.iceServers));
+  host.send({type:'voice-signal',targetId:'p2',session:hs,targetSession:'fake',description:{type:'offer',sdp:'v=0'}});await host.wait('communication-error');
+  crew.send({type:'voice-join'});const cc=await crew.wait('communication',m=>m.peers.some(p=>p.id==='p2'&&p.voiceSession));const cs=cc.peers.find(p=>p.id==='p2').voiceSession;
+  host.send({type:'voice-signal',targetId:'p2',session:hs,targetSession:cs,actorId:'p3',description:{type:'offer',sdp:'v=0'}});
+  const signal=await crew.wait('voice-signal');assert.equal(signal.from,'p1');assert.equal(signal.session,hs);
+  outsider.send({type:'voice-join'});const oc=await outsider.wait('communication',m=>m.peers.some(p=>p.voiceSession));
+  outsider.send({type:'voice-signal',targetId:'p2',session:oc.peers[0].voiceSession,targetSession:cs,description:{type:'offer',sdp:'v=0'}});await outsider.wait('communication-error');
+  const room=game.rooms.get(joined.code);room.state=createGame({originalId:'p8'});for(const p of room.state.players)room.positions[p.id]={x:0,z:0};room.state.players.find(p=>p.id==='p2').alive=false;room.state.players.find(p=>p.id==='p3').alive=false;
+  const gc=await crew.wait('communication',m=>m.channel==='ghost'),lc=await host.wait('communication',m=>m.channel==='living');
+  const liveSession=lc.peers.find(p=>p.id==='p1').voiceSession,ghostSession=gc.peers.find(p=>p.id==='p2').voiceSession;
+  assert.notEqual(liveSession,hs);assert.notEqual(ghostSession,cs);
+  ghost.send({type:'chat',text:'ghost only'});await crew.wait('chat',m=>m.text==='ghost only');await ghost.wait('chat',m=>m.text==='ghost only');
+  assert.ok(!host.messages.some(m=>m.type==='chat'&&m.text==='ghost only'));
+  host.send({type:'voice-signal',targetId:'p2',session:liveSession,targetSession:ghostSession,description:{type:'offer',sdp:'v=0'}});await host.wait('communication-error');
+  crew.send({type:'voice-leave'});await crew.wait('communication',m=>!m.peers.find(p=>p.id==='p2').voiceSession);
+  crew.send({type:'voice-join'});const fresh=await crew.wait('communication',m=>!!m.peers.find(p=>p.id==='p2').voiceSession);assert.notEqual(fresh.peers.find(p=>p.id==='p2').voiceSession,cs);
+  room.state.winner='good';room.state.phase='ended';await host.wait('communication',m=>m.channel==='all');
+  const resumed=await client(url);clients.push(resumed);resumed.send({type:'resume',code:joined.code,token:joined.token});await resumed.wait('joined');
+  const rc=await resumed.wait('communication');assert.equal(rc.peers.find(p=>p.id==='p1').voiceSession,null);
+ }finally{for(const c of clients)c.ws.terminate();game.close();await new Promise(r=>server.close(r));}
+});
 test('eight real connections: invite, permissions, private views, motion and reconnect',async()=>{
  const server=createServer(),game=attachMultiplayer(server);await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`ws://127.0.0.1:${server.address().port}/multiplayer`,clients=[];
  try{

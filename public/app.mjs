@@ -1,4 +1,5 @@
 import {createOnline} from '/online.mjs';
+import {createCommunication} from '/communication.mjs';
 import {createMinigames} from '/minigames.mjs';
 import {createGame,reduce,rooms,tasks,secrets} from '/src/rules.mjs';
 import {playerView} from '/src/views.mjs';
@@ -122,7 +123,7 @@ function renderMeeting(v){
   if(!v.meeting||v.winner){if(dialog.open)dialog.close();return;}
   const m=v.meeting,canVote=m.stage==='vote'&&v.self.alive;
   const targets=v.players.filter(p=>m.aliveIds.includes(p.id));
-  html('meeting-content',`<div class="meeting-heading"><p class="eyebrow">紧急会议 / EMERGENCY</p><span class="countdown">${seconds(m.endsAt-v.now)}<small>s</small></span></div><h2>${m.stage==='discuss'?'现在，谁值得信任？':'作出你的选择。'}</h2><p class="meeting-copy">${m.stage==='discuss'?'讨论阶段 · 请与朋友使用语音聊天讨论。':`需要至少 ${Math.floor(m.aliveIds.length/2)+1} 票才能淘汰一人。结束前可修改选择。`}<br>当前控制：${v.self.name}${v.self.alive?'':'（已淘汰）'} · ${paused?'计时暂停':`${speed}× 时间`}</p><div class="meeting-grid">${targets.map(p=>`<button ${canVote?'':'disabled'} data-action="${esc(JSON.stringify({type:'VOTE',targetId:p.id}))}" data-key="vote-${p.id}" class="${m.ownVote===p.id?'chosen':''}"><span class="crew-avatar" style="--player-color:${crewColor(p.id)}">${crewPortrait(p.id)}</span>${p.name}${m.ownVote===p.id?' ✓':''}</button>`).join('')}<button ${canVote?'':'disabled'} data-key="vote-skip" data-action="${esc(JSON.stringify({type:'VOTE',targetId:null}))}" class="${m.hasVoted&&m.ownVote===null?'chosen':''}">跳过投票${m.hasVoted&&m.ownVote===null?' ✓':''}</button></div><p class="meeting-copy">${m.hasVoted?'你的选择已记录，其他玩家看不到。':'尚未投票。未选择将计为弃权。'}</p><div class="meeting-controls"><label for="meeting-actor">模拟玩家</label><select id="meeting-actor" data-key="meeting-actor">${actorOptions()}</select><button data-command="step">推进 15 秒</button><button data-command="pause">${paused?'继续计时':'暂停计时'}</button></div>`);
+  html('meeting-content',`<div class="meeting-heading"><p class="eyebrow">紧急会议 / EMERGENCY</p><span class="countdown">${seconds(m.endsAt-v.now)}<small>s</small></span></div><h2>${m.stage==='discuss'?'现在，谁值得信任？':'作出你的选择。'}</h2><p class="meeting-copy">${m.stage==='discuss'?'讨论阶段 · 使用下方文字或语音与船员讨论。':`需要至少 ${Math.floor(m.aliveIds.length/2)+1} 票才能淘汰一人。结束前可修改选择。`}<br>当前控制：${v.self.name}${v.self.alive?'':'（已淘汰）'} · ${paused?'计时暂停':`${speed}× 时间`}</p><div class="meeting-grid">${targets.map(p=>`<button ${canVote?'':'disabled'} data-action="${esc(JSON.stringify({type:'VOTE',targetId:p.id}))}" data-key="vote-${p.id}" class="${m.ownVote===p.id?'chosen':''}"><span class="crew-avatar" style="--player-color:${crewColor(p.id)}">${crewPortrait(p.id)}</span>${p.name}${m.ownVote===p.id?' ✓':''}</button>`).join('')}<button ${canVote?'':'disabled'} data-key="vote-skip" data-action="${esc(JSON.stringify({type:'VOTE',targetId:null}))}" class="${m.hasVoted&&m.ownVote===null?'chosen':''}">跳过投票${m.hasVoted&&m.ownVote===null?' ✓':''}</button></div><p class="meeting-copy">${m.hasVoted?'你的选择已记录，其他玩家看不到。':'尚未投票。未选择将计为弃权。'}</p><div class="meeting-controls"><label for="meeting-actor">模拟玩家</label><select id="meeting-actor" data-key="meeting-actor">${actorOptions()}</select><button data-command="step">推进 15 秒</button><button data-command="pause">${paused?'继续计时':'暂停计时'}</button></div>`);
   if(!dialog.open)dialog.showModal();
 }
 function renderResult(v){
@@ -172,14 +173,16 @@ function frame(now){
 }
 try{
   world=createWorld($('world'),{getState:()=>state,getActor:()=>actorId,onInput:(input,sprint)=>online?.input(input,sprint),
-    canMove:()=>started&&(!remoteView||online?.connected)&&state.phase==='explore'&&state.players.find(p=>p.id===actorId).alive&&!document.querySelector('dialog[open]')&&!document.hidden,
+    canMove:()=>started&&(!remoteView||online?.connected)&&state.phase==='explore'&&state.players.find(p=>p.id===actorId).alive&&!document.querySelector('dialog[open]')&&!document.activeElement?.closest('input,textarea,[contenteditable="true"]')&&!document.hidden,
     onRoomChange:room=>{if(remoteView)return;state=reduce(state,{type:'MOVE',actorId,room});render();},
     onWalk:()=>{if(remoteView)return;if(state.channels[actorId]||state.corruption.channel?.actorId===actorId||state.corruption.channel?.targetId===actorId||state.meetingChannel?.actorId===actorId)state=reduce(state,{type:'CANCEL_INTERACTION',actorId});}
   });
 }catch(error){$('world-error').hidden=false;$('world-error').textContent='3D 场景无法启动，请使用支持 WebGL 的浏览器。';console.error(error);}
 $('leave-online').onclick=()=>online?.leave();
 render();
+const communication=createCommunication({send:message=>online?.sendCommunication(message)||false});
 online=createOnline({
+ onJoined:id=>communication.joined(id),onCommunication:data=>communication.update(data),onChat:data=>communication.chat(data),onVoiceSignal:data=>communication.signal(data),onCommunicationError:data=>communication.error(data),onDisconnect:()=>communication.disconnect(),
  onCombat:message=>showKill(message.actorId,message.targetId),
  onLocal:()=>{if(remoteView){remoteView=null;document.body.classList.remove('online-game');reset();}$('connection-status').textContent='单人练习';$('welcome').showModal();},
  onStatus:text=>{$('connection-status').textContent=text;},

@@ -1,0 +1,25 @@
+#communication-panel{position:fixed;right:14px;bottom:116px;width:min(330px,calc(100vw - 28px));z-index:35;background:rgba(17,30,48,.97);border:1px solid #416071;border-radius:12px;color:#e4f2f4;box-shadow:0 12px 36px #0005;font-size:13px;overflow:hidden}
+#communication-panel[hidden]{display:none}
+#communication-panel summary{padding:13px 15px;cursor:pointer;font-weight:700;color:#80e1d3;min-height:44px;box-sizing:border-box}
+#communication-panel .comms-badge{float:right;color:#f8c676}
+#communication-panel .comms-body{padding:0 12px 12px;max-height:48vh;overflow:auto}
+#communication-panel p{margin:7px 0;font-size:12px;line-height:1.5}
+#communication-panel .comms-channel{color:#acced8}
+#communication-panel .comms-messages{height:145px;overflow:auto;border-block:1px solid #344c60;padding:5px 0;overflow-wrap:anywhere}
+#communication-panel .comms-messages:empty:before{content:'还没有消息，和船员打个招呼吧。';color:#92a9b9;font-size:12px}
+#communication-panel .comms-messages strong{color:#80e1d3;font-weight:600}
+#communication-panel .comms-form{display:flex;gap:6px;margin-top:10px}
+#communication-panel input{min-width:0;flex:1;width:0;background:#0c1828;color:#fff;border:1px solid #4a697c;border-radius:7px;padding:9px;font-size:13px}
+#communication-panel button{font:inherit;padding:8px 10px;min-height:38px;border:1px solid #4a697c;border-radius:7px;background:#243e53;color:#f0f7fa;cursor:pointer}
+#communication-panel button:disabled{opacity:.5;cursor:default}
+#communication-panel button[hidden]{display:none}
+#communication-panel .comms-form button{color:#082b2b;background:#67d9bf;border-color:#67d9bf}
+#communication-panel .comms-voice-controls{display:flex;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px solid #344c60}
+#communication-panel .comms-feedback{color:#f8c676}
+#communication-panel .voice-status{color:#a6d7d3}
+#communication-panel .voice-members{padding:0;list-style:none;margin:6px 0;font-size:12px}
+#communication-panel .comms-relay{color:#95aaba;font-size:11px}
+dialog #communication-panel{position:relative;inset:auto;width:100%;box-sizing:border-box;margin-top:18px;box-shadow:none;text-align:left}
+dialog #communication-panel .comms-body{max-height:38vh}
+dialog #communication-panel .comms-messages{height:95px}
+@media(max-width:600px){#communication-panel{bottom:112px;right:10px;width:min(300px,calc(100vw - 20px))}#communication-panel .comms-body{max-height:35vh}#communication-panel .comms-messages{height:100px}dialog #communication-panel{width:100%}}

@@ -59,7 +59,7 @@ export function createWorld(container,{getState,getActor,onRoomChange,onWalk,can
   }
   renderer.domElement.addEventListener('keydown',e=>{if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)){e.preventDefault();keys.add(e.code);if(!e.repeat)taps.set(e.code,performance.now()+120);destination=null;route=[];targetRing.visible=false;}});
   window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',clearInput);
-  renderer.domElement.addEventListener('blur',()=>{keys.clear();taps.clear();});
+  renderer.domElement.addEventListener('blur',clearInput);
   renderer.domElement.addEventListener('pointerdown',e=>{renderer.domElement.focus({preventScroll:true});drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};renderer.domElement.setPointerCapture(e.pointerId);});
   renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>6)drag.moved=true;if(drag.moved){yaw-=dx*.006;pitch=THREE.MathUtils.clamp(pitch+dy*.004,.18,1.15);}drag.x=e.clientX;drag.y=e.clientY;});
   renderer.domElement.addEventListener('pointerup',e=>{

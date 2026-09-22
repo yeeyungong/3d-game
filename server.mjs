@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
 const routes={'/':'public/index.html','/index.html':'public/index.html','/style.css':'public/style.css','/app.mjs':'public/app.mjs','/src/rules.mjs':'src/rules.mjs','/src/views.mjs':'src/views.mjs'};
+Object.assign(routes,{'/communication.mjs':'public/communication.mjs','/voice.mjs':'public/voice.mjs','/communication.css':'public/communication.css'});
 Object.assign(routes,{'/online.mjs':'public/online.mjs','/config.json':'public/config.json','/minigames.mjs':'public/minigames.mjs','/src/puzzles.mjs':'src/puzzles.mjs','/station.mjs':'public/station.mjs','/theme.css':'public/theme.css','/scene.mjs':'public/scene.mjs','/src/world.mjs':'src/world.mjs','/vendor/three.module.js':'node_modules/three/build/three.module.js','/vendor/three.core.js':'node_modules/three/build/three.core.js'});
 export function createServer(){return http.createServer(async(req,res)=>{
   try{
