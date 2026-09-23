@@ -1,4 +1,6 @@
 export const WORLD_SCALE=1.7;
+export const POWER_SWITCH={x:-11*WORLD_SCALE,z:-11*WORLD_SCALE};
+export function nearPowerSwitch(position){return !!position&&Number.isFinite(position.x)&&Number.isFinite(position.z)&&Math.hypot(position.x-POWER_SWITCH.x,position.z-POWER_SWITCH.z)<=2.6;}
 export const WORLD_LIMIT=21.4*WORLD_SCALE;
 export const designCenters={hub:{x:0,z:0},power:{x:-14,z:-14},lab:{x:14,z:-14},storage:{x:-14,z:14},comms:{x:14,z:14}};
 export const centers=Object.fromEntries(Object.entries(designCenters).map(([id,p])=>[id,{x:p.x*WORLD_SCALE,z:p.z*WORLD_SCALE}]));
@@ -6,6 +8,7 @@ export const partitions=Object.values(designCenters).filter(p=>p.x).flatMap(p=>{
 export function spawnPoint(room,index=0){const c=centers[room]||centers.hub;return {x:c.x+(index%4-1.5)*2.8,z:c.z+(room==='hub'?1:-Math.sign(c.z))*(Math.floor(index/4)*2.5+(room==='hub'?3:4))};}
 export function zoneAt({x,z}){if(Math.abs(x)<8*WORLD_SCALE||Math.abs(z)<8*WORLD_SCALE)return 'hub';return z<0?(x<0?'power':'lab'):(x<0?'storage':'comms');}
 const obstacles=[...partitions,{x:0,z:-3,w:1.8,d:1.8},
+  {x:-11,z:-17,w:1.25,d:2},{x:-11,z:-11,w:.45,d:.35},
   ...[0,1,2].map(i=>({x:-18+i*2,z:-17,w:.8,d:.8})),
   ...[0,1].map(i=>({x:16,z:-17+i*4,w:1.5,d:.65})),
   ...[0,1,2,3,4].map(i=>({x:-17+i%3*1.6,z:16+Math.floor(i/3)*1.6,w:.7,d:.7})),

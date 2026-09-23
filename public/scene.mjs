@@ -26,7 +26,7 @@ export function createWorld(container,{getState,getActor,onRoomChange,onWalk,can
     const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;
     const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:true}));sprite.scale.set(width,width/4,1);return sprite;
   }
-  const hologram=buildStation(scene,{box,cylinder,material,label});
+  const station=buildStation(scene,{box,cylinder,material,label});
   // Humans have separate head, torso, arms, hands, legs and boots, articulated for walking.
   function human(index,name){
     const root=new THREE.Group(),body=new THREE.Group();root.add(body);
@@ -127,10 +127,10 @@ export function createWorld(container,{getState,getActor,onRoomChange,onWalk,can
     }
     follow.lerp(new THREE.Vector3(selected.position.x,1.25,selected.position.z),1-Math.exp(-dt*7));
     camera.position.set(follow.x+Math.sin(yaw)*distance*Math.cos(pitch),follow.y+distance*Math.sin(pitch),follow.z+Math.cos(yaw)*distance*Math.cos(pitch));camera.lookAt(follow);
-    hologram.rotation.y=now*.0006;hologram.position.y=2.3+Math.sin(now*.001)*.15;
+    station.update(state.powerLightsOn!==false,now);
     renderer.render(scene,camera);
     const text=`${selected.position.x.toFixed(1)}, ${selected.position.z.toFixed(1)}`;
     if(text!==positionText){container.querySelector('.world-position').textContent=`位置 ${text}`;positionText=text;}
   }
-  return {update,combatTarget,playAttack,navigate(room){if(!canMove())return;yaw=centers[room].z>0?Math.PI:0;navigateTo(centers[room]);renderer.domElement.focus({preventScroll:true});},reset(){people.forEach((h,i)=>{h.position=spawnPoint('hub',i);h.room='hub';h.attackUntil=0;h.hitUntil=0;h.fall=0;});actorBefore='';clearInput();},focus(){renderer.domElement.focus();}};
+  return {position:()=>({...person(getActor()).position}),update,combatTarget,playAttack,navigate(room){if(!canMove())return;yaw=centers[room].z>0?Math.PI:0;navigateTo(centers[room]);renderer.domElement.focus({preventScroll:true});},reset(){people.forEach((h,i)=>{h.position=spawnPoint('hub',i);h.room='hub';h.attackUntil=0;h.hitUntil=0;h.fall=0;});actorBefore='';clearInput();},focus(){renderer.domElement.focus();}};
 }

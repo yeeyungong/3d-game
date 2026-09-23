@@ -3,7 +3,7 @@ export function playerView(state,viewerId){
   if(!self)throw new Error('Unknown player');
   const m=state.meeting;
   return {
-    now:state.now,phase:state.phase,winner:state.winner,energy:state.energy,
+    now:state.now,phase:state.phase,winner:state.winner,energy:state.energy,powerLightsOn:state.powerLightsOn!==false,
     taskProgress:structuredClone(state.taskProgress[viewerId]||{completed:0,level:1}),
     aliveCount:state.players.filter(p=>p.alive).length,self:{...self},
     players:state.players.map(p=>({id:p.id,name:p.name,alive:p.alive,room:p.room,ally:self.role!=='good'&&p.role!=='good'})),

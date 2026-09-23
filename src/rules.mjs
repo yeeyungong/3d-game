@@ -1,4 +1,5 @@
 import {generatePuzzle,validPuzzle} from './puzzles.mjs';
+import {nearPowerSwitch} from './world.mjs';
 export const rooms={hub:{name:'中央大厅',adj:['power','lab','storage','comms']},power:{name:'供电区',adj:['hub','lab','storage']},lab:{name:'实验室',adj:['hub','power','comms']},storage:{name:'仓储区',adj:['hub','power','comms']},comms:{name:'通讯区',adj:['hub','lab','storage']}};
 export const tasks={
  'hub-maintenance':{name:'维护大厅终端',room:'hub',duration:10000,reward:10,cooldown:60000},
@@ -10,7 +11,7 @@ export const tasks={
 export const secrets=[{name:'植入污染装置',room:'power',duration:8000},{name:'盗取侵蚀样本',room:'lab',duration:6000},{name:'上传污染程序',room:'comms',duration:10000}];
 export function createGame({originalId='p1',puzzleSeed=Math.floor(Math.random()*4294967296)}={}) {
   const names=['林舟','许岚','陈默','苏禾','沈遥','陆川','白露','江屿'];
-  return {now:0,phase:'explore',winner:null,energy:0,puzzleSeed,taskProgress:{},
+  return {now:0,phase:'explore',winner:null,energy:0,powerLightsOn:true,puzzleSeed,taskProgress:{},
     players:names.map((name,i)=>({id:`p${i+1}`,name,role:`p${i+1}`===originalId?'original':'good',alive:true,hp:100,room:'hub'})),
     corruption:{used:0,steps:0,readyAt:15000,channel:null},
     channels:{},taskReadyAt:{},attackReadyAt:{},meeting:null,meetingChannel:null,
@@ -110,7 +111,10 @@ export function reduce(state,action) {
       s.meeting.votes[actor.id]=action.targetId;return s;
     }
     if(!actor?.alive||s.phase!=='explore')return state;
-    if(action.type==='CANCEL_INTERACTION'){
+    if(action.type==='TOGGLE_POWER_LIGHTS'){
+      if(actor.room!=='power'||busy(s,actor.id)||!nearPowerSwitch(action.position))return state;
+      s.powerLightsOn=!(s.powerLightsOn!==false);
+    }else if(action.type==='CANCEL_INTERACTION'){
       cancel(s,actor.id);
     }else if(action.type==='MOVE'){
       if(!rooms[actor.room].adj.includes(action.room))return state;

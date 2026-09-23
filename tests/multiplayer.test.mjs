@@ -6,6 +6,29 @@ import {attachMultiplayer} from '../multiplayer/server.mjs';
 import {createGame} from '../src/rules.mjs';
 function client(url){return new Promise((resolve,reject)=>{const ws=new WebSocket(url),messages=[];ws.on('message',s=>messages.push(JSON.parse(s)));ws.on('error',reject);ws.on('open',()=>resolve({ws,messages,send:m=>ws.send(JSON.stringify(m)),async wait(type,predicate=()=>true){const end=Date.now()+4000;while(Date.now()<end){const i=messages.findIndex(m=>m.type===type&&predicate(m));if(i>=0)return messages.splice(i,1)[0];await new Promise(r=>setTimeout(r,15));}throw Error(`Timeout waiting for ${type}`);}}));});}
 
+test('lighting uses server position, broadcasts changes and survives reconnect',async()=>{
+ const server=createServer(),game=attachMultiplayer(server);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const url=`ws://127.0.0.1:${server.address().port}/multiplayer`,clients=[];
+ try{
+  const host=await client(url),peer=await client(url);clients.push(host,peer);
+  host.send({type:'create',name:'Host'});const joined=await host.wait('joined');
+  peer.send({type:'join',code:joined.code,name:'Peer'});await peer.wait('joined');
+  const room=game.rooms.get(joined.code);room.state=createGame();room.last=Date.now();
+  for(const p of room.state.players)room.positions[p.id]={x:0,z:0};
+  room.state.players[0].room='power';
+  host.send({type:'action',action:{type:'TOGGLE_POWER_LIGHTS',position:{x:-18.7,z:-18.7}}});
+  await host.wait('error');assert.equal(room.state.powerLightsOn,true);
+  room.positions.p1={x:-18.7,z:-17};
+  await host.wait('state',m=>m.view.allowed.includes('TOGGLE_POWER_LIGHTS-'));
+  host.send({type:'action',action:{type:'TOGGLE_POWER_LIGHTS'}});
+  await host.wait('state',m=>m.view.powerLightsOn===false);
+  await peer.wait('state',m=>m.view.powerLightsOn===false);
+  const resumed=await client(url);clients.push(resumed);
+  resumed.send({type:'resume',code:joined.code,token:joined.token});await resumed.wait('joined');
+  assert.equal((await resumed.wait('state')).view.powerLightsOn,false);
+ }finally{for(const c of clients)c.ws.terminate();game.close();await new Promise(r=>server.close(r));}
+});
+
 test('room communication authenticates messages, isolates channels and requires voice opt-in',async()=>{
  const server=createServer(),game=attachMultiplayer(server);await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const url=`ws://127.0.0.1:${server.address().port}/multiplayer`,clients=[];

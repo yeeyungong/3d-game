@@ -16,7 +16,7 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
  function snapshot(r,m){
   const v=playerView(r.state,m.id);v.log=v.log.slice(-30);v.positions=r.positions;v.allowed=[];
   const add=(type,extra={})=>{if(reduce(r.state,{type,actorId:m.id,...extra})!==r.state)v.allowed.push(`${type}-${extra.taskId||extra.targetId||''}`);};
-  for(const id of Object.keys(tasks))add('START_TASK',{taskId:id});add('START_SECRET');add('START_MEETING');
+  for(const id of Object.keys(tasks))add('START_TASK',{taskId:id});add('START_SECRET');add('START_MEETING');add('TOGGLE_POWER_LIGHTS',{position:r.positions[m.id]});
   const target=nearestTarget(r.state.players.map(p=>({...p,position:r.positions[p.id]})),m.id);
   if(target){add('ATTACK',{targetId:target});if(v.corruption)add('START_CORRUPT',{targetId:target});}
   return {type:'state',actorId:m.id,view:v};
@@ -67,12 +67,12 @@ export function attachMultiplayer(server,{origins=[],maxRooms=100}={}){
     m.input={x:a.x,z:a.z};m.sprint=!!a.sprint;m.lastInput=now;return;
    }
    if(a.type==='action'){
-    const action=a.action;if(!action||!['ATTACK','START_CORRUPT','START_TASK','START_SECRET','SOLVE_PUZZLE','START_MEETING','VOTE','CANCEL_INTERACTION'].includes(action.type))return;
+    const action=a.action;if(!action||!['TOGGLE_POWER_LIGHTS','ATTACK','START_CORRUPT','START_TASK','START_SECRET','SOLVE_PUZZLE','START_MEETING','VOTE','CANCEL_INTERACTION'].includes(action.type))return;
     if(['ATTACK','START_CORRUPT'].includes(action.type)){
      const target=nearestTarget(r.state.players.map(p=>({...p,position:r.positions[p.id]})),m.id);if(!target||target!==action.targetId)return fail(ws,'目标太远或被遮挡。');
     }
     // Actor, time, position and task mode are never accepted from the browser.
-    const safe={type:action.type,actorId:m.id,targetId:action.targetId,taskId:action.taskId,answer:action.answer,puzzleId:action.puzzleId,interactive:true};
+    const safe={type:action.type,actorId:m.id,position:r.positions[m.id],targetId:action.targetId,taskId:action.taskId,answer:action.answer,puzzleId:action.puzzleId,interactive:true};
     const next=reduce(r.state,safe);if(next===r.state)return fail(ws,'当前条件不满足。');r.state=next;communication.sync(r);if(['START_TASK','START_SECRET','START_MEETING','START_CORRUPT'].includes(safe.type))m.input={x:0,z:0};send(ws,snapshot(r,m));
     if(safe.type==='ATTACK')for(const viewer of r.members.values()){
      const a=r.positions[m.id],b=r.positions[viewer.id];

@@ -50,7 +50,7 @@ function html(id,value){
   renderedMarkup.set(id,value);
   if(focused)el.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
 }
-function available(type,extra={}){if(remoteView)return online.connected&&remoteView.allowed.includes(`${type}-${extra.taskId||extra.targetId||''}`);return started&&reduce(state,{type,actorId,...extra})!==state;}
+function available(type,extra={}){if(remoteView)return online.connected&&remoteView.allowed.includes(`${type}-${extra.taskId||extra.targetId||''}`);return started&&reduce(state,{type,actorId,position:world?.position(),...extra})!==state;}
 function button(label,type,extra={},className='',reason=''){
   const enabled=available(type,extra), data=esc(JSON.stringify({type,...extra}));
   return `<button data-action="${data}" data-key="${type}-${extra.targetId||extra.taskId||extra.room||''}" class="${className}" ${enabled?'':`disabled title="${esc(reason||'当前不可操作')}"`}>${label}</button>`;
@@ -59,7 +59,7 @@ function dispatch(action){
   if(remoteView){online.sendAction(action);return;}
   const previous=state;
   if(['START_TASK','START_SECRET'].includes(action.type))action={...action,interactive:true};
-  state=reduce(state,{actorId,...action});
+  state=reduce(state,{actorId,...action,position:world?.position()});
   if(previous===state&&action.type!=='TICK')$('announcement').textContent='当前条件不满足，请查看操作提示。';
   if(previous!==state&&['START_TASK','START_SECRET'].includes(action.type)){
     const c=state.channels[actorId],definition=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];
@@ -94,6 +94,7 @@ function render(){
   html('pilot-status',`<b>${self.name}</b> · ${roleNames[self.role]} · HP ${self.hp}<span>${rooms[self.room].name}</span>${c?`<small>转换 ${c.used} / 2 · 秘密任务 ${c.steps} / 3</small>`:''}`);
   html('combat-hud',self.role==='good'?'<span>完成任务 · 收集能量 · 投票找出内鬼</span>':`<span>${target?'目标：'+target.name:'靠近玩家以选取目标'}</span><div>${self.role==='original'?`<button data-combat="J" ${c&&target&&available('START_CORRUPT',{targetId})?'':'disabled'}><kbd>J</kbd> 转换</button>`:''}<button data-combat="K" ${target&&available('ATTACK',{targetId})?'':'disabled'}><kbd>K</kbd> ${v.attackReadyAt>v.now?`冷却 ${seconds(v.attackReadyAt-v.now)}s`:'击杀'}</button></div>`);
   let actions='';
+  if(self.alive&&self.room==='power'&&v.phase==='explore')actions+=`<div class="operation lighting-control"><p>照明回路 · ${v.powerLightsOn?'工作照明':'应急照明'}</p>${button(`${v.powerLightsOn?'关闭':'开启'}电灯`,'TOGGLE_POWER_LIGHTS',{},'lighting-button','靠近入口绿色开关箱，结束当前操作后使用')}<p class="hint">靠近入口绿色开关箱 · E / 点击切换</p></div>`;
   if(v.channel&&!v.channel.interactive){
     const names={secret:'秘密任务进行中',task:'正在收集能量',corrupt:'正在转换目标',meeting:'正在启动会议'};
     const progress=Math.min(100,(v.now-v.channel.startsAt)/(v.channel.endsAt-v.channel.startsAt)*100);
@@ -141,6 +142,7 @@ function combatAction(key){
 }
 document.addEventListener('keydown',event=>{
   if(event.repeat||event.ctrlKey||event.metaKey||event.altKey||event.target.closest('input,select,textarea,[contenteditable="true"]'))return;
+  if(event.code==='KeyE'&&started&&!document.querySelector('dialog[open]')&&available('TOGGLE_POWER_LIGHTS')){event.preventDefault();dispatch({type:'TOGGLE_POWER_LIGHTS'});world?.focus();}
   if(event.code==='KeyJ'||event.code==='KeyK'){event.preventDefault();combatAction(event.code==='KeyJ'?'J':'K');}
 });
 document.addEventListener('click',event=>{
@@ -189,7 +191,7 @@ online=createOnline({
  onState:message=>{
   remoteView=message.view;actorId=message.actorId;started=true;paused=false;document.body.classList.add('online-game');
   const v=remoteView;
-  state={network:true,now:v.now,phase:v.phase,winner:v.winner,players:v.players.map(p=>({...p,role:p.id===actorId?v.self.role:'unknown',hp:p.id===actorId?v.self.hp:100,position:v.positions[p.id]})),channels:{},corruption:v.corruption||{used:0,channel:null},meetingChannel:null};
+  state={network:true,powerLightsOn:v.powerLightsOn,now:v.now,phase:v.phase,winner:v.winner,players:v.players.map(p=>({...p,role:p.id===actorId?v.self.role:'unknown',hp:p.id===actorId?v.self.hp:100,position:v.positions[p.id]})),channels:{},corruption:v.corruption||{used:0,channel:null},meetingChannel:null};
   if(v.channel&&['task','secret'].includes(v.channel.kind))state.channels[actorId]=v.channel;
   if(v.channel?.interactive&&v.channel.puzzle.id!==puzzleSession?.puzzleId){const c=v.channel,def=c.kind==='secret'?secrets[c.step]:tasks[c.taskId];puzzleSession={actorId,puzzleId:c.puzzle.id};minigames.open(c.puzzle,def.name);}
   render();
